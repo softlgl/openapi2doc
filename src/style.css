@@ -1,0 +1,149 @@
+/* ===== 设计变量：全站唯一色板，深浅色共用同一套语义名 ===== */
+:root {
+  color-scheme: light;
+
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
+  --brand-weak: #eef2ff;
+  --brand-line: #e0e7ff;
+
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-3: #f0f2f5;
+  --border: #e3e6ea;
+  --border-strong: #d0d7de;
+
+  --text: #1f2328;
+  --text-2: #57606a;
+  --text-3: #8b949e;
+
+  --header-bg: #161b22;
+  --header-fg: #ffffff;
+  --header-fg-2: #8b949e;
+  --header-hover: #21262d;
+  --header-active: #30363d;
+
+  --danger: #dc2626;
+  --warn: #d97706;
+  --ok: #059669;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, .08);
+  --radius: 10px;
+
+  /* 统一 Element Plus 主色为 indigo，与文档预览保持一致 */
+  --el-color-primary: #4f46e5;
+  --el-color-primary-light-3: #847eed;
+  --el-color-primary-light-5: #a7a3f2;
+  --el-color-primary-light-7: #cac8f7;
+  --el-color-primary-light-8: #dcdafa;
+  --el-color-primary-light-9: #ededfc;
+  --el-color-primary-dark-2: #4338ca;
+  --el-border-radius-base: 8px;
+}
+
+html.dark {
+  color-scheme: dark;
+
+  --brand: #6366f1;
+  --brand-hover: #818cf8;
+  --brand-weak: rgba(99, 102, 241, .14);
+  --brand-line: rgba(99, 102, 241, .35);
+
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2129;
+  --surface-3: #21262d;
+  --border: #30363d;
+  --border-strong: #3d444d;
+
+  --text: #e6edf3;
+  --text-2: #9198a1;
+  --text-3: #6e7681;
+
+  --header-bg: #010409;
+  --header-fg: #f0f6fc;
+  --header-fg-2: #9198a1;
+  --header-hover: #161b22;
+  --header-active: #21262d;
+
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --ok: #34d399;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, .5);
+
+  --el-color-primary: #6366f1;
+  --el-color-primary-light-3: #818cf8;
+  --el-color-primary-light-5: #a5b4fc;
+  --el-color-primary-light-7: #c7d2fe;
+  --el-color-primary-light-8: #d8dcfe;
+  --el-color-primary-light-9: #1e2142;
+  --el-color-primary-dark-2: #4f46e5;
+
+  /* 让 EP 内置容器的暗色值与自定义 surface 对齐 */
+  --el-bg-color: #161b22;
+  --el-bg-color-page: #0d1117;
+  --el-bg-color-overlay: #1c2129;
+  --el-fill-color-blank: #161b22;
+  --el-border-color: #30363d;
+  --el-border-color-light: #30363d;
+  --el-border-color-lighter: #30363d;
+  --el-text-color-primary: #e6edf3;
+  --el-text-color-regular: #c9d1d9;
+}
+
+html, body, #app {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .2s ease, color .2s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--brand);
+}
+
+/* 细滚动条，避免默认粗滚动条破坏卡片观感 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 卡片/表格在暗色下跟随语义变量 */
+.el-card {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+.el-table {
+  --el-table-border-color: var(--border);
+  --el-table-bg-color: var(--surface);
+  --el-table-tr-bg-color: var(--surface);
+  --el-table-header-bg-color: var(--surface-2);
+  --el-table-header-text-color: var(--text-2);
+  --el-table-text-color: var(--text);
+  --el-table-row-hover-bg-color: var(--surface-3);
+}
+.el-dropdown-menu__item--divided::before {
+  background: var(--border);
+}

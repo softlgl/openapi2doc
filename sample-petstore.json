@@ -1,0 +1,58 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "宠物商店接口", "version": "1.2.3", "description": "示例" },
+  "host": "api.example.com",
+  "basePath": "/v1",
+  "schemes": ["https"],
+  "tags": [{ "name": "宠物", "description": "宠物相关接口" }],
+  "paths": {
+    "/pets": {
+      "get": {
+        "summary": "获取宠物列表", "tags": ["宠物"],
+        "parameters": [
+          { "name": "limit", "in": "query", "required": false, "type": "integer" },
+          { "name": "tag", "in": "query", "required": false, "type": "string" }
+        ],
+        "responses": {
+          "200": { "description": "成功", "schema": { "type": "array", "items": { "$ref": "#/definitions/Pet" } } }
+        }
+      },
+      "post": {
+        "summary": "新增宠物", "tags": ["宠物"],
+        "parameters": [
+          { "name": "body", "in": "body", "required": true, "schema": { "$ref": "#/definitions/NewPet" } }
+        ],
+        "responses": { "200": { "description": "创建成功", "schema": { "$ref": "#/definitions/Pet" } } }
+      }
+    },
+    "/pets/{id}": {
+      "get": {
+        "summary": "查询单个宠物", "tags": ["宠物"],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "type": "integer" }],
+        "responses": {
+          "200": { "description": "成功", "schema": { "$ref": "#/definitions/Pet" } },
+          "404": { "description": "未找到" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Pet": {
+      "type": "object", "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "integer", "description": "唯一标识" },
+        "name": { "type": "string", "description": "宠物名称" },
+        "tag": { "type": "string" },
+        "category": { "$ref": "#/definitions/Category" }
+      }
+    },
+    "NewPet": {
+      "type": "object", "required": ["name"],
+      "properties": { "name": { "type": "string" }, "tag": { "type": "string" } }
+    },
+    "Category": {
+      "type": "object",
+      "properties": { "id": { "type": "integer" }, "name": { "type": "string" } }
+    }
+  }
+}
