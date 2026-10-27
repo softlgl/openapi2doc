@@ -137,6 +137,8 @@ const dirty = ref(false)
 const ready = ref(false)
 const draftSavedAt = ref('')
 const checkResult = ref<{ ok: boolean; count?: number; schemas?: number; error?: string } | null>(null)
+// 已存文档的接口数快照：重新导入后数量变化时提醒用户确认覆盖
+const originalOpCount = ref<number | null>(null)
 
 const canSave = computed(() => !!form.name.trim() && !!form.source.trim())
 const sourceStat = computed(() => {
@@ -229,12 +231,25 @@ watch(form, () => {
 })
 
 // ---- 源内容装载 ----
+// 上传前快照，供“撤销本次导入”回退
+let sourceBeforeImport: string | null = null
+
 function loadFile(raw: File): void {
   fileName.value = raw.name
   const reader = new FileReader()
   reader.onload = () => {
+    const prevSource = form.source
+    sourceBeforeImport = prevSource
+    reimportPrompted = false
     form.source = String(reader.result || '')
     checkResult.value = null
+    // 首次导入（新建或源内容为空）时用 info.title 自动填充文档名称
+    if (!prevSource.trim() && !form.name.trim()) {
+      const parsed = parseOpenApi(form.source)
+      if (parsed.ok && parsed.doc.title && parsed.doc.title !== '接口文档') {
+        form.name = parsed.doc.title
+      }
+    }
     autoCheck()
   }
   reader.readAsText(raw)
@@ -280,6 +295,8 @@ function checkSource(): void {
 
 let checkTimer: number | undefined
 // 自动校验只提示成功，避免粘贴过程中被红条打扰；错误留给用户主动点“校验”
+// 重新导入后接口数与原文档不一致时提醒一次（仅编辑已有文档）
+let reimportPrompted = false
 function autoCheck(): void {
   if (checkTimer) window.clearTimeout(checkTimer)
   checkTimer = window.setTimeout(() => {
@@ -288,9 +305,30 @@ function autoCheck(): void {
       return
     }
     const result = parseOpenApi(form.source)
-    checkResult.value = result.ok
-      ? { ok: true, count: result.doc.operations.length, schemas: result.doc.schemas.length }
-      : null
+    if (result.ok) {
+      checkResult.value = { ok: true, count: result.doc.operations.length, schemas: result.doc.schemas.length }
+      // 覆盖提醒仅针对上传导入替换已有文档源码的场景
+      if (
+        sourceBeforeImport !== null &&
+        sourceBeforeImport.trim() &&
+        !reimportPrompted &&
+        originalOpCount.value !== null &&
+        result.doc.operations.length !== originalOpCount.value
+      ) {
+        reimportPrompted = true
+        const n = result.doc.operations.length
+        ElMessageBox.confirm(
+          `重新导入后接口数由 ${originalOpCount.value} 变为 ${n}，保存后将覆盖原文档内容。`,
+          '已替换源内容',
+          { type: 'warning', confirmButtonText: '确认替换', cancelButtonText: '撤销本次导入', cancelButtonClass: 'el-button--default' }
+        ).catch(() => {
+          // 撤销：恢复到上传前的源码
+          if (sourceBeforeImport !== null) form.source = sourceBeforeImport
+        })
+      }
+    } else {
+      checkResult.value = null
+    }
   }, 800)
 }
 
@@ -408,6 +446,9 @@ onMounted(async () => {
         description: detail.description || '',
         source: detail.source,
       })
+      // 记录原接口数，供重新导入时的覆盖提醒对比
+      const parsed = parseOpenApi(detail.source)
+      if (parsed.ok) originalOpCount.value = parsed.doc.operations.length
     } catch (e) {
       ElMessage.error((e as Error).message)
     }

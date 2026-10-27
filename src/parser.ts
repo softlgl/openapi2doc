@@ -1,5 +1,5 @@
 import yaml from 'js-yaml'
-import type { ApiDocument, ApiServer, ApiOperation, ApiParameter, ApiResponse, SchemaLike } from './types'
+import type { ApiDocument, ApiServer, ApiOperation, ApiParameter, ApiResponse, SchemaLike, SecuritySchemeDef } from './types'
 
 function extractRefName(ref: string): string {
   return ref.split('/').pop() || ref
@@ -155,6 +155,80 @@ function parseResponses(responses: any, _components: any): ApiResponse[] {
   return out
 }
 
+// 从方案定义派生短展示标签：键名太无语义时按类型与参数名归并（如 apiKey+Authorization 头 → Bearer JWT）
+function deriveAuthLabel(d: { type: string; schemeId: string; in?: string; param?: string; scheme?: string }): string {
+  if (d.type === 'http') return d.scheme === 'bearer' ? 'Bearer' : d.scheme ? cap(d.scheme) : 'Basic'
+  if (d.type === 'apiKey') {
+    if (d.param && /^authorization$/i.test(d.param.trim())) return 'Bearer JWT'
+    return d.param ? `${d.param}${d.in === 'query' ? ' 查询参数' : ' 头'}` : d.schemeId
+  }
+  if (d.type === 'oauth2') return 'OAuth2'
+  if (d.type === 'openIdConnect') return 'OpenID Connect'
+  return d.schemeId
+}
+
+function cap(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}
+
+// 归一化认证方案定义：兼容 OpenAPI 3 components.securitySchemes 与 Swagger 2 securityDefinitions
+function parseSecuritySchemes(obj: any): SecuritySchemeDef[] {
+  const defs: Record<string, any> = (obj.components?.securitySchemes && typeof obj.components.securitySchemes === 'object')
+    ? obj.components.securitySchemes
+    : (obj.securityDefinitions && typeof obj.securityDefinitions === 'object') ? obj.securityDefinitions : {}
+  const out: SecuritySchemeDef[] = []
+  for (const [schemeId, raw] of Object.entries(defs)) {
+    const s = raw as any
+    if (!s || typeof s !== 'object') continue
+    let type = typeof s.type === 'string' ? s.type : ''
+    // Swagger 2.0 的 basic 类型等价于 OpenAPI 3 的 http+basic
+    if (type === 'basic') type = 'http'
+    const base: SecuritySchemeDef = {
+      schemeId,
+      type,
+      displayName: schemeId,
+      label: '',
+      description: typeof s.description === 'string' ? s.description : '',
+      in: typeof s.in === 'string' ? s.in : undefined,
+      param: typeof s.name === 'string' ? s.name : undefined,
+      scheme: type === 'http' ? (s.scheme || 'basic') : undefined,
+    }
+    base.label = deriveAuthLabel(base)
+    out.push(base)
+  }
+  return out
+}
+
+// 从单个 security 要求项提取方案键名：对象形式 { schemeId: scopes } 取键名；已是键名数组时直接用
+function schemeIdsOf(req: any): string[] {
+  if (Array.isArray(req)) return req.map(String)
+  if (req && typeof req === 'object') return Object.keys(req)
+  return []
+}
+
+// 解析单个操作生效的认证方案：操作级 security 优先，缺省回退全局；[] 表示显式无需认证
+// opSec/globalSec 均保留源 JSON 形态（对象或键名数组），统一由 schemeIdsOf 提取
+function resolveOpSecurity(opSec: any, globalSec: any[] | undefined, schemeMap: Map<string, SecuritySchemeDef>): SecuritySchemeDef[] | undefined {
+  const reqs: any = opSec !== undefined ? opSec : globalSec
+  if (!Array.isArray(reqs)) return undefined
+  const out: SecuritySchemeDef[] = []
+  const seen = new Set<string>()
+  for (const req of reqs) {
+    for (const name of schemeIdsOf(req)) {
+      const d = schemeMap.get(name)
+      if (d && !seen.has(name)) {
+        seen.add(name)
+        out.push(d)
+      } else if (!d && !seen.has(name)) {
+        // 引用了未定义的方案时降级展示键名
+        seen.add(name)
+        out.push({ schemeId: name, type: '', displayName: name, label: name })
+      }
+    }
+  }
+  return out
+}
+
 export function parseOpenApi(source: string | object): { ok: true; doc: ApiDocument } | { ok: false; error: string } {
   let obj: any
 
@@ -217,6 +291,10 @@ export function parseOpenApi(source: string | object): { ok: true; doc: ApiDocum
   }
 
   const components = obj.components || {}
+  const securitySchemes = parseSecuritySchemes(obj)
+  const schemeMap = new Map(securitySchemes.map((d) => [d.schemeId, d]))
+  // 全局 security 保留源 JSON 形态，提取键名统一由 schemeIdsOf 处理
+  const globalSecurity: any[] | undefined = Array.isArray(obj.security) ? obj.security : undefined
   const schemasOut: ApiDocument['schemas'] = []
 
   // collect definitions or schemas
@@ -302,6 +380,7 @@ export function parseOpenApi(source: string | object): { ok: true; doc: ApiDocum
         parameters: parsedParams,
         responses: parseResponses(op.responses, components),
         requestBody,
+        auth: resolveOpSecurity(op.security, globalSecurity, schemeMap),
       })
     }
   }
@@ -320,6 +399,8 @@ export function parseOpenApi(source: string | object): { ok: true; doc: ApiDocum
       tags,
       operations,
       schemas: schemasOut,
+      securitySchemes,
+      security: globalSecurity,
     },
   }
 }

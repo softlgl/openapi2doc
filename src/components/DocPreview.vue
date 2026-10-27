@@ -39,8 +39,10 @@ const frameRef = ref<HTMLIFrameElement | null>(null)
 // 初始主题在生成 HTML 时快照，之后通过消息同步，避免切换主题导致 iframe 重载
 const initialTheme = ref<ThemeMode>(theme.value)
 
+// iframe 作为独立可滚动视口填满预览面板：内部目录 sticky、滚动高亮、锚点平滑跳转、
+// 专注模式、返回顶部等均原生工作，外层不参与滚动，避免 sticky 视口 + 占位块几何同步的脆弱性
 const htmlPreview = computed(() =>
-  doc.value ? generateHtml(doc.value, { selection: true, theme: initialTheme.value }) : ''
+  doc.value ? generateHtml(doc.value, { selection: true, theme: initialTheme.value, embed: true }) : ''
 )
 
 function postTheme(mode: ThemeMode): void {
@@ -55,6 +57,7 @@ function postTheme(mode: ThemeMode): void {
 function onMessage(e: MessageEvent): void {
   const d = e.data
   if (!d || typeof d !== 'object') return
+  if (!frameRef.value || e.source !== frameRef.value.contentWindow) return // 只认当前预览 iframe
   if (d.type === 'o2d-select') {
     emit('toggle', String(d.id), !!d.checked)
   } else if (d.type === 'o2d-theme' && (d.value === 'dark' || d.value === 'light')) {
@@ -62,7 +65,7 @@ function onMessage(e: MessageEvent): void {
   }
 }
 
-// iframe 每次加载完成后补发一次，覆盖“切换主题时文档尚未就绪”的情况
+// iframe 每次加载完成后补发主题，保证内外一致
 function onFrameLoad(): void {
   postTheme(theme.value)
 }
@@ -89,8 +92,12 @@ async function load(): Promise<void> {
   }
 }
 
-onMounted(() => window.addEventListener('message', onMessage))
-onBeforeUnmount(() => window.removeEventListener('message', onMessage))
+onMounted(() => {
+  window.addEventListener('message', onMessage)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onMessage)
+})
 
 watch(() => props.id, () => void load())
 void load()
@@ -102,6 +109,7 @@ void load()
   flex-direction: column;
   height: 100%;
   width: 100%;
+  min-height: 0;
 }
 .preview-meta {
   flex-shrink: 0;
@@ -119,9 +127,11 @@ void load()
   border-radius: 4px;
   font-size: 12px;
 }
+/* iframe 填满面板剩余高度，内容在 iframe 内部自行滚动 */
 .preview {
   flex: 1;
-  min-height: 0;
+  min-height: 360px;
+  display: block;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;

@@ -7,6 +7,9 @@ export interface HtmlOptions {
   selection?: boolean
   /** 初始主题；嵌入到管理界面时由外层传入，独立打开时留空以跟随系统 */
   theme?: ThemeMode
+  /** 内嵌模式：作为独立可滚动 iframe 视口嵌入管理界面（滚动/锚点/返回顶部均原生处理，
+   *  仅勾选与主题通过 postMessage 与父页面单向/反向同步） */
+  embed?: boolean
 }
 
 function escapeHtml(str: string): string {
@@ -25,6 +28,32 @@ const RENDER_FN = `
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function methodBadge(m){var cm={GET:'#2563eb',POST:'#059669',PUT:'#d97706',DELETE:'#dc2626',PATCH:'#7c3aed',OPTIONS:'#0ea5e9',HEAD:'#9333ea',TRACE:'#64748b'};var bg=cm[m.toUpperCase()]||'#64748b';return '<span class="method" style="background:'+bg+'">'+m.toUpperCase()+'</span>';}
 function toggleBox(title){ title.parentNode.classList.toggle('collapsed'); }
+
+// 认证方案展示：拼接类型/位置/参数名等细节
+function authDetail(d){
+  var bits=[];
+  if(d.type==='apiKey'){ bits.push('apiKey'); if(d.in) bits.push('位于 '+d.in); if(d.param) bits.push('参数名 '+d.param); }
+  else if(d.type==='http'){ bits.push('HTTP '+(d.scheme||'basic')); }
+  else if(d.type==='oauth2'||d.type==='openIdConnect'){ bits.push(d.type==='oauth2'?'OAuth2':'OpenID Connect'); }
+  else if(d.type){ bits.push(d.type); }
+  return bits.join(' · ');
+}
+function authLabel(d){ return d.label||d.displayName||d.schemeId||'认证'; }
+// 概览区胶囊：短标签+细节，长 description 悬停提示（不内联，避免长句撑破行）
+function authChipHtml(d){
+  var detail=authDetail(d);
+  // tip 已自行转义，外层不再 esc
+  var tip=d.description?(esc(d.description)+'<br>'+esc(detail)):esc(detail);
+  return '<span class="auth-chip" title="'+tip+'"><span class="auth-lock">🔒</span>'+esc(authLabel(d))+(detail?'<span class="auth-detail">'+esc(detail)+'</span>':'')+'</span>';
+}
+// 接口标题行的紧凑标签：只显首个方案短标签，多方案以 +N 计数；未声明 security 不展示
+function authOpHtml(op){
+  if(op.auth===undefined||op.auth===null) return '';
+  if(!op.auth.length) return '<span class="auth-mini none" title="此接口无需认证">无需认证</span>';
+  var names=op.auth.map(authLabel).join(' / ');
+  var more=op.auth.length>1?'<span class="auth-more">+'+(op.auth.length-1)+'</span>':'';
+  return '<span class="auth-mini" title="认证：'+esc(names)+'（任选其一）"><span class="auth-lock">🔒</span>'+esc(authLabel(op.auth[0]))+more+'</span>';
+}
 
 function enumLabels(s){
   var map={};
@@ -259,7 +288,7 @@ function renderOperation(op, basePath, serverUrl, SCM){
   var h='<div class="op card" id="'+op.id+'">';
   h+='<div class="op-head">';
   if(window.O2D_SELECT){ h+='<label class="op-chk" title="勾选此接口用于单独导出"><input type="checkbox" class="op-checkbox" data-id="'+op.id+'" /></label>'; }
-  h+=methodBadge(op.method)+' <code class="path">'+esc(fullPath)+'</code><span class="osum">'+esc(op.summary)+'</span>'+(op.deprecated?'<span class="dep">已废弃</span>':'')+'<button class="copy-path" data-c="'+esc(fullPath)+'" title="复制完整路径">复制路径</button></div>';
+  h+=methodBadge(op.method)+' <code class="path">'+esc(fullPath)+'</code><span class="osum">'+esc(op.summary)+'</span>'+(op.deprecated?'<span class="dep">已废弃</span>':'')+authOpHtml(op)+'<button class="copy-path" data-c="'+esc(fullPath)+'" title="复制完整路径">复制路径</button></div>';
   h+='<div class="op-body">';
   if(op.description) h+='<p class="odesc">'+esc(op.description)+'</p>';
   h+=renderParams(op.parameters,'请求参数');
@@ -300,6 +329,11 @@ function init(){
   if(doc.operations) h+='<span class="badge ghost">'+doc.operations.length+' 个接口</span>';
   h+='</div>';
   if(doc.serverUrl) h+='<div class="server"><span class="lbl">服务地址</span><code>'+esc(doc.serverUrl)+'</code></div>';
+  if(doc.securitySchemes&&doc.securitySchemes.length){
+    h+='<div class="authrow"><span class="lbl">认证方式</span>';
+    for(var ai=0;ai<doc.securitySchemes.length;ai++){ h+=authChipHtml(doc.securitySchemes[ai]); }
+    h+='</div>';
+  }
   if(doc.description) h+='<p class="gdesc">'+esc(doc.description)+'</p>';
   h+='</div>';
 
@@ -461,7 +495,7 @@ function mColor(m){var cm={GET:'#2563eb',POST:'#059669',PUT:'#d97706',DELETE:'#d
 window.addEventListener('DOMContentLoaded', init);
 `
 
-function injectDocScript(doc: ApiDocument, selection?: boolean, theme?: ThemeMode): string {
+function injectDocScript(doc: ApiDocument, selection?: boolean, theme?: ThemeMode, embed?: boolean): string {
   const json = JSON.stringify({
     title: doc.title,
     version: doc.version,
@@ -471,9 +505,11 @@ function injectDocScript(doc: ApiDocument, selection?: boolean, theme?: ThemeMod
     tags: doc.tags,
     operations: doc.operations,
     schemas: doc.schemas,
+    securitySchemes: doc.securitySchemes,
+    security: doc.security,
   }).replace(/</g, '\\u003c')
   const themeLiteral = theme === 'dark' || theme === 'light' ? JSON.stringify(theme) : 'null'
-  return `window.DOC=${json};\nwindow.O2D_SELECT=${selection ? true : false};\nwindow.O2D_THEME=${themeLiteral};`
+  return `window.DOC=${json};\nwindow.O2D_SELECT=${selection ? true : false};\nwindow.O2D_THEME=${themeLiteral};\nwindow.O2D_EMBED=${embed ? true : false};`
 }
 
 const CSS = `
@@ -549,6 +585,14 @@ main{flex:1;padding:40px 36px;min-width:0;max-width:1280px;margin:0 auto;width:1
 .server{margin-top:16px;color:var(--fg2);font-size:13px}
 .server .lbl{font-size:12px;color:var(--muted);margin-right:8px}
 .server code{background:var(--code-bg);padding:3px 8px;border-radius:6px;font-size:12.5px;color:var(--fg)}
+.authrow{margin-top:12px;color:var(--fg2);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.authrow .lbl{font-size:12px;color:var(--muted);margin-right:2px}
+.auth-chip{display:inline-flex;align-items:center;gap:6px;background:var(--chip-bg);border:1px solid var(--chip-line);color:var(--chip-fg2);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:600;line-height:1.7}
+.auth-chip .auth-detail{font-weight:500;font-size:11px;color:var(--chip-fg);opacity:.85}
+.auth-mini{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;background:var(--chip-bg);border:1px solid var(--chip-line);color:var(--chip-fg2);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;line-height:1.7;max-width:220px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.auth-mini.none{background:var(--opt-bg);border-color:var(--opt-line);color:var(--opt-fg)}
+.auth-more{font-weight:700;opacity:.75}
+.auth-lock{font-size:11px}
 .gdesc{color:var(--fg2);font-size:14px;line-height:1.7;margin:14px 0 0;max-width:720px}
 
 .tag{font-size:20px;font-weight:700;margin:36px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--line);display:flex;align-items:center;gap:10px;scroll-margin-top:12px}
@@ -660,7 +704,7 @@ main{flex:1;padding:40px 36px;min-width:0;max-width:1280px;margin:0 auto;width:1
 `
 
 export function generateHtml(doc: ApiDocument, opts?: HtmlOptions): string {
-  const script = injectDocScript(doc, opts?.selection, opts?.theme)
+  const script = injectDocScript(doc, opts?.selection, opts?.theme, opts?.embed)
   return `<!doctype html>
 <html lang="zh-CN">
 <head>

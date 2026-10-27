@@ -1,4 +1,34 @@
-import type { ApiDocument, ApiOperation, ApiParameter, ApiResponse, SchemaLike } from '../types'
+import type { ApiDocument, ApiOperation, ApiParameter, ApiResponse, SchemaLike, SecuritySchemeDef } from '../types'
+
+// 认证方案 → 细节文本（类型 · 位置 · 参数名），不含名称
+function authDetailText(d: SecuritySchemeDef): string {
+  const bits: string[] = []
+  if (d.type === 'apiKey') {
+    bits.push('apiKey')
+    if (d.in) bits.push(`位于 ${d.in}`)
+    if (d.param) bits.push(`参数名 ${d.param}`)
+  } else if (d.type === 'http') {
+    bits.push(`HTTP ${d.scheme || 'basic'}`)
+  } else if (d.type === 'oauth2') {
+    bits.push('OAuth2')
+  } else if (d.type === 'openIdConnect') {
+    bits.push('OpenID Connect')
+  } else if (d.type) {
+    bits.push(d.type)
+  }
+  return bits.join(' · ')
+}
+// 短展示标签（与 HTML 侧 authLabel 一致）
+function authLabel(d: SecuritySchemeDef): string {
+  return d.label || d.displayName || d.schemeId || '认证'
+}
+// 认证方案 → “短标签（类型 · 位置 · 参数名）”可读文本
+function authText(d: SecuritySchemeDef): string {
+  const detail = authDetailText(d)
+  // 细节与短标签重合时（如 OAuth2）不重复拼接
+  if (!detail || detail === authLabel(d)) return authLabel(d)
+  return `${authLabel(d)}（${detail}）`
+}
 
 // 净化 C# 泛型完整名：去掉 `` `1[[...]] `` 尾部（含裸反引号，会破坏 Markdown 渲染），得纯模型名
 function cleanName(s: string): string {
@@ -186,6 +216,16 @@ function renderOperation(op: ApiOperation, doc: ApiDocument): string {
     lines.push(`> ⚠️ **已废弃**\n\n`)
   }
 
+  if (op.auth !== undefined) {
+    if (op.auth.length === 0) {
+      lines.push(`**认证**: 无需认证\n\n`)
+    } else {
+      const joiner = op.auth.length > 1 ? ' / ' : ''
+      // 接口行只显短标签，细节见概览“认证方式”清单
+      lines.push(`**认证**: ${op.auth.map(authLabel).join(joiner)}${op.auth.length > 1 ? '（任选其一）' : ''}\n\n`)
+    }
+  }
+
   if (op.parameters && op.parameters.length > 0) {
     lines.push(`#### 请求参数\n\n`)
     lines.push(renderParameters(op.parameters))
@@ -224,6 +264,16 @@ export function generateMarkdown(doc: ApiDocument): string {
 
   if (doc.description) {
     lines.push(`${doc.description}\n\n`)
+  }
+
+  if (doc.securitySchemes && doc.securitySchemes.length) {
+    lines.push('### 认证方式', '')
+    for (const s of doc.securitySchemes) {
+      lines.push(`- \`${s.displayName}\`：${authText(s)}\n\n`)
+      // 长使用说明缩进另起，不挤在主行里
+      if (s.description) lines.push(`  ${s.description.replace(/\n+/g, ' ')}\n`)
+    }
+    lines.push('\n')
   }
 
   const byTag = new Map<string, ApiOperation[]>()
